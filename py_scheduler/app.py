@@ -1,23 +1,66 @@
 from __future__ import annotations
 
-import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers import SchedulerNotRunningError
 from apscheduler.schedulers.blocking import BlockingScheduler
-from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
+import structlog
+from tenacity import RetryCallState, retry, stop_after_attempt, wait_exponential
 
 from py_scheduler.loader import load_scheduler_config
 from py_scheduler.models import JobConfig, SchedulerConfig
 from py_scheduler.registry import JobRegistry
 
-logger = logging.getLogger(__name__)
+structured_logger = structlog.get_logger(__name__)
+
+
+def _duration_ms(started_at: float) -> int:
+    return round((time.perf_counter() - started_at) * 1000)
 
 
 def _with_retry(job: JobConfig, func: Callable[..., object]) -> Callable[..., object]:
     retry_config = job.retry
+    job_logger = structured_logger.bind(job_id=job.id, job_name=job.name)
+    attempt_started_at: dict[int, float] = {}
+    current_attempt_number = {"value": 1}
+
+    def _before_attempt(retry_state: RetryCallState) -> None:
+        current_attempt_number["value"] = retry_state.attempt_number
+        attempt_started_at[retry_state.attempt_number] = time.perf_counter()
+
+    def _after_attempt(retry_state: RetryCallState) -> None:
+        if retry_state.outcome is None or not retry_state.outcome.failed:
+            return
+        attempt_number = retry_state.attempt_number
+        started_at = attempt_started_at.pop(attempt_number, retry_state.start_time)
+        exception = retry_state.outcome.exception()
+        status = "failed" if attempt_number >= retry_config.attempts else "retry"
+        log_method = job_logger.error if status == "failed" else job_logger.warning
+        log_method(
+            "job_execution",
+            status=status,
+            duration_ms=_duration_ms(started_at),
+            attempt_number=attempt_number,
+            error_type=type(exception).__name__ if exception is not None else None,
+            error_message=str(exception) if exception is not None else None,
+        )
+
+    def _run_job() -> object:
+        started_at = time.perf_counter()
+        attempt_number = current_attempt_number["value"]
+        result = func()
+        attempt_started_at.pop(attempt_number, None)
+        job_logger.info(
+            "job_execution",
+            status="success",
+            duration_ms=_duration_ms(started_at),
+            attempt_number=attempt_number,
+        )
+        return result
+
     return retry(
         reraise=True,
         stop=stop_after_attempt(retry_config.attempts),
@@ -26,8 +69,9 @@ def _with_retry(job: JobConfig, func: Callable[..., object]) -> Callable[..., ob
             min=retry_config.wait_min_seconds,
             max=retry_config.wait_max_seconds,
         ),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-    )(func)
+        before=_before_attempt,
+        after=_after_attempt,
+    )(_run_job)
 
 
 class SchedulerApp:
@@ -69,17 +113,14 @@ class SchedulerApp:
         try:
             scheduler = self.build_scheduler()
             n = len(scheduler.get_jobs())
-            logger.info(
-                "Iniciando py-scheduler com %d job(s); Ctrl+C para encerrar.",
-                n,
-            )
+            structured_logger.info("scheduler_started", job_count=n)
             scheduler.start()
         except KeyboardInterrupt:
-            logger.info("KeyboardInterrupt: encerrando graciosamente.")
+            structured_logger.info("shutdown_requested")
         finally:
             if scheduler is not None:
                 try:
                     scheduler.shutdown(wait=True)
-                    logger.info("Scheduler parado.")
+                    structured_logger.info("scheduler_stopped")
                 except SchedulerNotRunningError:
-                    logger.debug("Scheduler nunca chegou a rodar; shutdown ignorado.")
+                    structured_logger.debug("scheduler_shutdown_skipped")
