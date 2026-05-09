@@ -1,17 +1,33 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers import SchedulerNotRunningError
 from apscheduler.schedulers.blocking import BlockingScheduler
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 from py_scheduler.loader import load_scheduler_config
-from py_scheduler.models import SchedulerConfig
+from py_scheduler.models import JobConfig, SchedulerConfig
 from py_scheduler.registry import JobRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _with_retry(job: JobConfig, func: Callable[..., object]) -> Callable[..., object]:
+    retry_config = job.retry
+    return retry(
+        reraise=True,
+        stop=stop_after_attempt(retry_config.attempts),
+        wait=wait_exponential(
+            multiplier=retry_config.wait_multiplier_seconds,
+            min=retry_config.wait_min_seconds,
+            max=retry_config.wait_max_seconds,
+        ),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )(func)
 
 
 class SchedulerApp:
@@ -36,9 +52,10 @@ class SchedulerApp:
         )
         for job in cfg.jobs:
             func = self._registry.get(job.name)
+            retrying_func = _with_retry(job, func)
             kwargs = job.interval.to_apscheduler_kwargs()
             scheduler.add_job(
-                func,
+                retrying_func,
                 trigger="interval",
                 id=job.id,
                 replace_existing=True,

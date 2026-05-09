@@ -1,11 +1,17 @@
 # Exemplo de configuração de jobs para o py-scheduler.
 # Cada job referencia um nome registrado em código (JobRegistry).
+# Retry usa Exponential Backoff e, se omitido, tenta 3 vezes.
 
 jobs:
   - id: exemplo_segundos
     name: exemplo_tick
     interval:
       seconds: 5
+    retry:
+      attempts: 3
+      wait_multiplier_seconds: 1
+      wait_min_seconds: 1
+      wait_max_seconds: 30
 
   - id: exemplo_minutos
     name: exemplo_relatorio

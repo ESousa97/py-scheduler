@@ -29,12 +29,39 @@ class IntervalConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class RetryConfig:
+    """Política de retry aplicada à execução de um job."""
+
+    attempts: int = 3
+    wait_multiplier_seconds: float = 1.0
+    wait_min_seconds: float = 1.0
+    wait_max_seconds: float = 60.0
+
+    def __post_init__(self) -> None:
+        if self.attempts < 1:
+            raise ValueError("RetryConfig.attempts deve ser maior ou igual a 1")
+        if self.wait_multiplier_seconds <= 0:
+            raise ValueError(
+                "RetryConfig.wait_multiplier_seconds deve ser maior que zero"
+            )
+        if self.wait_min_seconds < 0:
+            raise ValueError(
+                "RetryConfig.wait_min_seconds deve ser maior ou igual a zero"
+            )
+        if self.wait_max_seconds < self.wait_min_seconds:
+            raise ValueError(
+                "RetryConfig.wait_max_seconds deve ser maior ou igual ao minimo"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class JobConfig:
     """Especificação de um job carregada do YAML."""
 
     id: str
     name: str
     interval: IntervalConfig
+    retry: RetryConfig = RetryConfig()
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,3 +79,21 @@ def interval_from_mapping(data: dict[str, Any]) -> IntervalConfig:
     minutes = int(raw_minutes) if raw_minutes is not None else None
     hours = int(raw_hours) if raw_hours is not None else None
     return IntervalConfig(seconds=seconds, minutes=minutes, hours=hours)
+
+
+def retry_from_mapping(data: dict[str, Any] | None) -> RetryConfig:
+    if data is None:
+        return RetryConfig()
+    raw_attempts = data.get("attempts", RetryConfig.attempts)
+    raw_multiplier = data.get(
+        "wait_multiplier_seconds",
+        RetryConfig.wait_multiplier_seconds,
+    )
+    raw_min = data.get("wait_min_seconds", RetryConfig.wait_min_seconds)
+    raw_max = data.get("wait_max_seconds", RetryConfig.wait_max_seconds)
+    return RetryConfig(
+        attempts=int(raw_attempts),
+        wait_multiplier_seconds=float(raw_multiplier),
+        wait_min_seconds=float(raw_min),
+        wait_max_seconds=float(raw_max),
+    )

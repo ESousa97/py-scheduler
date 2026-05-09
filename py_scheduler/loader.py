@@ -6,10 +6,10 @@ from typing import Any, cast
 import yaml
 
 from py_scheduler.models import (
-    IntervalConfig,
     JobConfig,
     SchedulerConfig,
     interval_from_mapping,
+    retry_from_mapping,
 )
 
 
@@ -17,16 +17,25 @@ def _parse_job(entry: dict[str, Any], index: int) -> JobConfig:
     job_id = entry.get("id")
     name = entry.get("name")
     interval_raw = entry.get("interval")
+    retry_raw = entry.get("retry")
     if not isinstance(job_id, str) or not job_id.strip():
         raise ValueError(f"jobs[{index}].id deve ser uma string não vazia")
     if not isinstance(name, str) or not name.strip():
         raise ValueError(f"jobs[{index}].name deve ser uma string não vazia")
     if not isinstance(interval_raw, dict):
         raise ValueError(f"jobs[{index}].interval deve ser um mapeamento")
+    if retry_raw is not None and not isinstance(retry_raw, dict):
+        raise ValueError(f"jobs[{index}].retry deve ser um mapeamento")
     interval = interval_from_mapping(cast(dict[str, Any], interval_raw))
+    retry = retry_from_mapping(cast(dict[str, Any] | None, retry_raw))
     # valida cedo para mensagens claras
     interval.to_apscheduler_kwargs()
-    return JobConfig(id=job_id.strip(), name=name.strip(), interval=interval)
+    return JobConfig(
+        id=job_id.strip(),
+        name=name.strip(),
+        interval=interval,
+        retry=retry,
+    )
 
 
 def load_scheduler_config(path: str | Path) -> SchedulerConfig:
