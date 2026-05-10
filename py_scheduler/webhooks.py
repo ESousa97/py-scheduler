@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import http.client
 import json
+import ssl
 import threading
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import structlog
 
-from py_scheduler.models import WebhookConfig
+from py_scheduler.models import WebhookConfig, webhook_url_has_allowed_scheme
 from py_scheduler.persistence import JobExecutionStore
 
 structured_logger = structlog.get_logger(__name__)
@@ -18,6 +19,48 @@ structured_logger = structlog.get_logger(__name__)
 
 def _utc_iso_timestamp() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _post_http_https(
+    url: str,
+    body: bytes,
+    headers: dict[str, str],
+    timeout: float,
+) -> int:
+    """POST só para http/https via http.client (sem urlopen / esquemas arbitrários)."""
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError("apenas http e https são suportados")
+    host = parsed.hostname
+    if host is None:
+        raise ValueError("URL sem hostname")
+    port = parsed.port
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+
+    if scheme == "https":
+        conn: http.client.HTTPConnection = http.client.HTTPSConnection(
+            host,
+            port if port is not None else 443,
+            timeout=timeout,
+            context=ssl.create_default_context(),
+        )
+    else:
+        conn = http.client.HTTPConnection(
+            host,
+            port if port is not None else 80,
+            timeout=timeout,
+        )
+    try:
+        conn.request("POST", path, body=body, headers=headers)
+        resp = conn.getresponse()
+        code = resp.status
+        resp.read()
+        return code
+    finally:
+        conn.close()
 
 
 @dataclass(slots=True)
@@ -104,35 +147,39 @@ class WebhookNotifier:
     def _send(self, payload: dict[str, Any]) -> None:
         url = self._config.url
         assert url is not None
+        url = url.strip()
+        if not webhook_url_has_allowed_scheme(url):
+            structured_logger.warning(
+                "webhook_delivery_skipped",
+                reason="disallowed_url_scheme",
+                job_name=payload.get("job_name"),
+                webhook_event=payload.get("event"),
+            )
+            return
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        req = urllib.request.Request(
-            url.strip(),
-            data=body,
-            method="POST",
-            headers={"Content-Type": "application/json; charset=utf-8"},
-        )
+        hdrs = {"Content-Type": "application/json; charset=utf-8"}
         try:
-            with urllib.request.urlopen(req, timeout=self._config.timeout_seconds) as resp:
-                code = getattr(resp, "status", resp.getcode())
+            code = _post_http_https(url, body, hdrs, self._config.timeout_seconds)
+            if code >= 400:
+                structured_logger.warning(
+                    "webhook_delivery_failed",
+                    reason="http_error",
+                    status=code,
+                    job_name=payload.get("job_name"),
+                    webhook_event=payload.get("event"),
+                    error=f"HTTP {code}",
+                )
+            else:
                 structured_logger.debug(
                     "webhook_sent",
                     status_code=code,
                     webhook_event=payload.get("event"),
                     job_name=payload.get("job_name"),
                 )
-        except urllib.error.HTTPError as exc:
+        except ValueError as exc:
             structured_logger.warning(
                 "webhook_delivery_failed",
-                reason="http_error",
-                status=exc.code,
-                job_name=payload.get("job_name"),
-                webhook_event=payload.get("event"),
-                error=str(exc),
-            )
-        except urllib.error.URLError as exc:
-            structured_logger.warning(
-                "webhook_delivery_failed",
-                reason="url_error",
+                reason="bad_url",
                 job_name=payload.get("job_name"),
                 webhook_event=payload.get("event"),
                 error=str(exc),

@@ -17,7 +17,7 @@ Configuration is a **single YAML file** passed as the first CLI argument, or def
 | `database_path` | string | `scheduler.sqlite` | SQLite path for execution history and webhook muzzle state. Use `""` to disable persistence. |
 | `jobs_register_module` | string | `null` | Overrides `PY_SCHEDULER_JOBS_MODULE` when set. |
 | `metrics_enabled` | bool | `true` | When `false`, the `/metrics` HTTP server is not started. |
-| `metrics_host` | string | `0.0.0.0` | Bind address for metrics. |
+| `metrics_host` | string | `127.0.0.1` | Bind address for metrics. Use `0.0.0.0` only when you intend to expose `/metrics` on all interfaces (for example behind a firewall or in a container). |
 | `metrics_port` | int | `9100` | TCP port for metrics. |
 
 ## `jobs[]` entries

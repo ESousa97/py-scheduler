@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
+
+
+def webhook_url_has_allowed_scheme(url: str) -> bool:
+    """True apenas para http/https (evita file:, ftp:, etc. em urlopen)."""
+    return urlparse(url.strip()).scheme.lower() in ("http", "https")
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +83,8 @@ class WebhookConfig:
             raise ValueError(
                 "WebhookConfig.failure_alert_silence_minutes deve ser maior ou igual a zero"
             )
+        if self.url is not None and not webhook_url_has_allowed_scheme(self.url):
+            raise ValueError("WebhookConfig.url deve usar o esquema http ou https")
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +99,7 @@ class SchedulerConfig:
     jobs_register_module: str | None = None
     # Servidor HTTP do prometheus_client (expondo /metrics).
     metrics_enabled: bool = True
-    metrics_host: str = "0.0.0.0"
+    metrics_host: str = "127.0.0.1"
     metrics_port: int = 9100
 
 

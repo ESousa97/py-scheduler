@@ -9,7 +9,7 @@
 #
 # Métricas Prometheus em /metrics (prometheus_client):
 #   metrics_enabled: false   # desliga o servidor HTTP
-#   metrics_host: 0.0.0.0
+#   metrics_host: 127.0.0.1   # ou metrics_host: 0.0.0.0 em rede/container (cuidado: expõe em todas as interfaces)
 #   metrics_port: 9100
 #
 # Módulo que registra callables (register(registry)); sobrescreve PY_SCHEDULER_JOBS_MODULE.
@@ -17,7 +17,7 @@
 
 database_path: scheduler.sqlite
 metrics_enabled: true
-metrics_host: 0.0.0.0
+metrics_host: 127.0.0.1
 metrics_port: 9100
 #
 # Webhook opcional: após esgotar retentativas, envia POST JSON com

@@ -60,28 +60,30 @@ class _RecorderNotifier:
 
 class TestLoaderWebhook(unittest.TestCase):
     def test_storage_and_metrics_keys(self) -> None:
-        yaml = """
-database_path: /tmp/x.db
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "x.db")
+            yaml = f"""
+database_path: {json.dumps(db_path)}
 jobs_register_module: mypkg.jobs
 metrics_enabled: false
 metrics_host: 127.0.0.1
 metrics_port: 9200
 jobs: []
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
-        ) as f:
-            f.write(yaml)
-            path = Path(f.name)
-        try:
-            cfg = load_scheduler_config(path)
-            self.assertEqual(cfg.database_path, "/tmp/x.db")
-            self.assertEqual(cfg.jobs_register_module, "mypkg.jobs")
-            self.assertFalse(cfg.metrics_enabled)
-            self.assertEqual(cfg.metrics_host, "127.0.0.1")
-            self.assertEqual(cfg.metrics_port, 9200)
-        finally:
-            path.unlink(missing_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+            ) as f:
+                f.write(yaml)
+                path = Path(f.name)
+            try:
+                cfg = load_scheduler_config(path)
+                self.assertEqual(cfg.database_path, db_path)
+                self.assertEqual(cfg.jobs_register_module, "mypkg.jobs")
+                self.assertFalse(cfg.metrics_enabled)
+                self.assertEqual(cfg.metrics_host, "127.0.0.1")
+                self.assertEqual(cfg.metrics_port, 9200)
+            finally:
+                path.unlink(missing_ok=True)
 
     def test_webhook_from_yaml(self) -> None:
         yaml = """
@@ -127,6 +129,24 @@ jobs:
     def test_webhook_from_mapping_empty_url(self) -> None:
         w = webhook_from_mapping({"url": "   "})
         self.assertIsNone(w.url)
+
+    def test_webhook_url_rejects_non_http_scheme(self) -> None:
+        yaml = """
+webhook:
+  url: "file:///etc/passwd"
+jobs: []
+"""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(yaml)
+            path = Path(f.name)
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                load_scheduler_config(path)
+            self.assertIn("http", str(ctx.exception).lower())
+        finally:
+            path.unlink(missing_ok=True)
 
     def test_webhook_failure_alert_silence_minutes(self) -> None:
         yaml = """

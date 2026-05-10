@@ -146,7 +146,7 @@ def _parse_metrics_enabled(raw: Any) -> bool:
 
 def _parse_metrics_host(raw: Any) -> str:
     if raw is None:
-        return "0.0.0.0"
+        return "127.0.0.1"
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("metrics_host deve ser uma string não vazia")
     return raw.strip()
