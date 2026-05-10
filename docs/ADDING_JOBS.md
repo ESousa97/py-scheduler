@@ -1,54 +1,54 @@
-# Adicionar novas tarefas sem alterar o código principal
+# Adding jobs without changing core code
 
-O ponto de extensão é um **módulo Python** que expõe a função `register(registry)`, onde `registry` é um `JobRegistry`. O `main.py` apenas carrega esse módulo e chama `register`; as implementações das tarefas ficam no seu pacote ou arquivo separado.
+The extension point is a **Python module** that exposes **`register(registry)`**, where `registry` is a **`JobRegistry`**. The CLI loads that module and calls `register`; job bodies live in your package or a standalone module.
 
-## Passos
+## Steps
 
-1. **Crie um módulo** (por exemplo `minha_empresa/scheduler_jobs.py`) com funções sem argumentos (ou com argumentos default) que o APScheduler pode chamar, e uma função `register`:
+1. **Create a module** (for example `mycompany/scheduler_jobs.py`) with no-arg callables (or defaults-only parameters) that APScheduler can invoke, plus `register`:
 
    ```python
    from py_scheduler.registry import JobRegistry
 
-   def backup_diario() -> None:
+   def daily_backup() -> None:
        ...
 
    def register(registry: JobRegistry) -> None:
-       registry.register("backup_diario", backup_diario)
+       registry.register("daily_backup", daily_backup)
    ```
 
-2. **Aponte o agendador para o módulo** de uma destas formas:
+2. **Point the scheduler** at the module in either way:
 
-   - Variável de ambiente `PY_SCHEDULER_JOBS_MODULE=minha_empresa.scheduler_jobs` (útil no Docker/Kubernetes).
-   - Ou no YAML raiz: `jobs_register_module: minha_empresa.scheduler_jobs` (tem precedência sobre a variável de ambiente quando definido).
+   - Environment variable `PY_SCHEDULER_JOBS_MODULE=mycompany.scheduler_jobs` (handy in Docker/Kubernetes).
+   - Or root YAML key `jobs_register_module: mycompany.scheduler_jobs` (wins over the environment variable when set).
 
-3. **Declare os jobs no YAML** com `name` igual ao nome usado em `registry.register(...)`, e `interval` / `retry` como hoje.
+3. **Declare jobs in YAML** with `name` equal to the string passed to `registry.register(...)`, and configure `interval` / `retry` as documented in [configuration.md](configuration.md).
 
-O `main.py` não precisa ser editado quando você adiciona tarefas: basta novo módulo + entradas no YAML (e dependências instaladas no ambiente, por exemplo `pip install -e .` do seu pacote).
+You do not need to edit `main.py` when adding tasks: ship a new module plus YAML entries (and install any extra dependencies in the environment, for example `pip install -e .` from your own package).
 
 ## Docker
 
-Monte o ficheiro de configuração em `/app/config/config.yaml` e, se usar um pacote próprio, instale-o na imagem (multi-stage ou `pip install`) ou monte o código em `PYTHONPATH`.
+Mount the config file at `/app/config/config.yaml`. If you use a private package, install it in the image (multi-stage build or `pip install`) or mount code onto `PYTHONPATH`.
 
-Exemplo:
+Example:
 
 ```bash
 docker build -t py-scheduler .
 docker run --rm -p 9100:9100 \
-  -v /caminho/config.yaml:/app/config/config.yaml:ro \
+  -v /path/to/config.yaml:/app/config/config.yaml:ro \
   -v py-scheduler-data:/data \
-  -e PY_SCHEDULER_JOBS_MODULE=minha_empresa.scheduler_jobs \
+  -e PY_SCHEDULER_JOBS_MODULE=mycompany.scheduler_jobs \
   py-scheduler
 ```
 
-Defina `database_path` no YAML para `/data/scheduler.sqlite` se quiser persistência dentro do volume.
+Set `database_path` in YAML to `/data/scheduler.sqlite` if you want durable history inside the volume.
 
-## Métricas Prometheus
+## Prometheus metrics
 
-O endpoint HTTP expõe `/metrics` (porta configurável, por defeito `9100`).
+The HTTP server exposes **`/metrics`** (port configurable, default **9100**).
 
-- **`py_scheduler_job_failures_total`** — etiquetas `job_id`, `job_name`. Conta apenas **falhas finais** (depois de esgotar retentativas), alinhado com o envio de webhook de falha.
+- **`py_scheduler_job_failures_total`** — labels `job_id`, `job_name`. Counts **terminal** failures only (after retries), aligned with failure webhooks.
 
-- **`py_scheduler_job_execution_seconds`** — histograma por `job_id` e `job_name`, com observação da duração de **cada tentativa** (sucesso ou falha). O tempo médio por job em Prometheus costuma ser expresso com PromQL, por exemplo:
+- **`py_scheduler_job_execution_seconds`** — histogram by `job_id` and `job_name`, one observation per **attempt** (success or failure). Example average latency in PromQL:
 
   ```text
   sum by (job_id, job_name) (
@@ -60,8 +60,8 @@ O endpoint HTTP expõe `/metrics` (porta configurável, por defeito `9100`).
   )
   ```
 
-Ajuste a janela `[5m]` ao seu scrape e SLO.
+Tune the `[5m]` window to your scrape interval and SLOs.
 
-## Histórico SQLite
+## SQLite history
 
-Cada tentativa gera uma linha na tabela `job_executions` com `outcome` em `success`, `failed_retry` ou `failed_final`, `duration_ms` e mensagem de erro quando aplicável. Para desativar a escrita, use `database_path: ""` no YAML.
+Each attempt inserts a row into **`job_executions`** with `outcome` in `success`, `failed_retry`, or `failed_final`, `duration_ms`, and error metadata when applicable. Disable persistence with `database_path: ""` in YAML.

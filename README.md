@@ -1,39 +1,218 @@
-# py-scheduler
+<div align="center">
+<h1>py-scheduler</h1>
 
-Agendador de tarefas com [APScheduler](https://github.com/agronholm/apscheduler), configuração em YAML, persistência de execuções (SQLite), webhooks e métricas Prometheus.
+<p>Minimal Python job scheduler: YAML-driven intervals on <strong>APScheduler</strong>, optional <strong>SQLite</strong> execution history, <strong>Tenacity</strong> retries with exponential backoff, optional <strong>webhooks</strong> (with failure-alert muzzle), <strong>Prometheus</strong> metrics on <code>/metrics</code>, structured <strong>structlog</strong> output, and a <strong>Dockerfile</strong> for production-style runs.</p>
 
-## Instalação
+  <img src="assets/python.png" alt="py-scheduler banner" width="600px">
+
+  <br>
+
+[![CI](https://github.com/esousa97/py-scheduler/actions/workflows/ci.yml/badge.svg)](https://github.com/esousa97/py-scheduler/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/esousa97/py-scheduler/actions/workflows/codeql.yml/badge.svg)](https://github.com/esousa97/py-scheduler/actions/workflows/codeql.yml)
+[![Dependency review](https://img.shields.io/badge/dependency%20review-in%20CI-0085CA?style=flat&logo=githubactions&logoColor=white)](https://github.com/esousa97/py-scheduler/actions/workflows/ci.yml)
+[![Publish](https://img.shields.io/badge/Publish-release%20%7C%20manual-blue?style=flat&logo=githubactions&logoColor=white)](https://github.com/esousa97/py-scheduler/actions/workflows/publish.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=flat&logo=python&logoColor=white)](https://github.com/esousa97/py-scheduler/blob/main/pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/esousa97/py-scheduler?style=flat)](https://github.com/esousa97/py-scheduler/commits)
+[![Ruff](https://img.shields.io/badge/Ruff-linting-261230?style=flat&logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
+[![pytest](https://img.shields.io/badge/tests-pytest-blue?style=flat&logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![CodeFactor](https://www.codefactor.io/repository/github/esousa97/py-scheduler/badge)](https://www.codefactor.io/repository/github/esousa97/py-scheduler)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?style=flat&logo=pre-commit&logoColor=white)](https://github.com/esousa97/py-scheduler/blob/main/.pre-commit-config.yaml)
+
+</div>
+
+---
+
+**py-scheduler** is a small, production-minded **scheduler**: **declare** jobs in YAML (interval triggers), **bind** Python callables from a pluggable `register(registry)` module, **run** them under **APScheduler** with **per-job Tenacity** retries, optional **SQLite** audit rows, optional **HTTP webhooks** after terminal failures (and optionally after successes), and an embedded **Prometheus** exporter. The CLI loads `config.example.yaml` (or a path you pass), imports `PY_SCHEDULER_JOBS_MODULE` (or `jobs_register_module` in YAML), and blocks until **SIGINT**/**SIGTERM**. Canonical repository: `github.com/esousa97/py-scheduler`.
+
+## Demo (quick smoke test)
+
+Create a virtual environment, install the package, and validate YAML + registry wiring without starting the long-running scheduler loop.
+
+**Linux / macOS (bash)**
 
 ```bash
-pip install py-scheduler
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+python scripts/smoke_validate.py
 ```
 
-## Uso
+**Windows (PowerShell)**
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e .
+
+python scripts/smoke_validate.py
+```
+
+To exercise the full **CLI** and run jobs on a real interval, use `python main.py config.example.yaml` (or `py-scheduler path/to/config.yaml`). See [docs/development.md](docs/development.md) for tests, Docker, and formatting.
+
+## Features
+
+| Area | What you get |
+| ---- | -------------- |
+| Config | **YAML** job list with `interval` (`seconds` / `minutes` / `hours`) and optional `retry` blocks. |
+| Jobs | **JobRegistry** maps logical `name` keys to callables; implementations live in a user module with `register(registry)`. |
+| Execution | **APScheduler** `BlockingScheduler` + `ThreadPoolExecutor` (`coalesce`, `max_instances=1`). |
+| Resilience | **Tenacity** exponential backoff per job (`attempts`, `wait_*`) wrapping each execution. |
+| Persistence | Optional **SQLite** `job_executions` table via `database_path` (empty string disables). |
+| Notifications | Optional **webhook** POST JSON; **failure_alert_silence_minutes** reduces duplicate failure noise. |
+| Observability | **structlog** JSON logs; **prometheus_client** `/metrics` (toggle with `metrics_enabled`). |
+| Packaging | **Hatchling** `pyproject.toml`, `py-scheduler` console script, bundled `config.example.yaml`. |
+| Container | **`Dockerfile`** — slim Python image, config volume, `/data` for SQLite. |
+
+## Tech stack
+
+| Component | Role |
+| --------- | ---- |
+| Python 3.11+ | Language and runtime |
+| APScheduler 3 | Blocking scheduler, interval triggers |
+| PyYAML | Config load and validation |
+| tenacity | Retry/backoff around job bodies |
+| structlog | Structured logging |
+| prometheus_client | Metrics HTTP server |
+| pytest / pytest-cov | Tests and coverage |
+| Ruff | Lint + format |
+
+## Prerequisites
+
+- Python **3.11+** and `pip`.
+- No database server is required; **SQLite** is optional for execution history.
+
+## Installation and usage
+
+### From source (recommended)
 
 ```bash
-py-scheduler caminho/para/config.yaml
+git clone https://github.com/esousa97/py-scheduler.git
+cd py-scheduler
+pip install -r requirements.txt
+pip install -e ".[dev]"
+# start from config.example.yaml or copy it and edit paths / webhooks
 ```
 
-Ou, a partir do repositório:
+### Development install (editable)
+
+```bash
+pip install -e ".[dev]"
+```
+
+### PyPI
+
+There are **no PyPI install badges** in this README yet because uploads to PyPI run **only on a published GitHub Release** (see `.github/workflows/publish.yml`). The same workflow supports **Run workflow** (manual dispatch): it builds wheels/sdists and uploads **artifacts** for inspection, without publishing. Configure **PyPI trusted publishing** (or a token) for the `pypi` environment for release publishes; then `pip install py-scheduler` works after the first successful publish.
+
+**Dependency review** runs as a **CI job on every pull request** (not on plain pushes to `main`), using `actions/dependency-review-action` alongside lint and tests.
+
+## Quick Start
+
+### Run the scheduler (foreground)
 
 ```bash
 python main.py config.example.yaml
 ```
 
-Variável de ambiente `PY_SCHEDULER_JOBS_MODULE` define o módulo Python que implementa `register(registry)`.
+`PY_SCHEDULER_JOBS_MODULE` defaults to **`py_scheduler.example_jobs`** when not set in YAML or the environment.
 
-## Desenvolvimento
+### CLI entrypoint
+
+```bash
+py-scheduler config.example.yaml
+```
+
+### Optional metrics probe
+
+With `metrics_enabled: true` (default) and `metrics_port: 9100`:
+
+```bash
+curl -s http://127.0.0.1:9100/metrics | head
+```
+
+## Resilience (automatic retries)
+
+Each scheduled callable is wrapped with **Tenacity** (`stop_after_attempt`, `wait_exponential`) configured per job in YAML. Failed attempts are logged and persisted (when SQLite is enabled); the final failure increments **`py_scheduler_job_failures_total`** and may trigger the **webhook**. Tune behaviour via each job’s `retry` block in [`config.example.yaml`](config.example.yaml) and the wiring in [`py_scheduler/app.py`](py_scheduler/app.py).
+
+## Documentation
+
+| Document | Contents |
+| -------- | -------- |
+| [LICENSE](LICENSE) | MIT License |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| [`codecov.yml`](codecov.yml) | Codecov defaults |
+| [`.pre-commit-config.yaml`](.pre-commit-config.yaml) | Local + CI-friendly Ruff hooks |
+| [docs/architecture.md](docs/architecture.md) | Components, data flow, persistence |
+| [docs/configuration.md](docs/configuration.md) | YAML keys and environment variables |
+| [docs/development.md](docs/development.md) | Setup, tests, Docker, scripts |
+| [docs/ADDING_JOBS.md](docs/ADDING_JOBS.md) | Custom `register(registry)` modules |
+
+## Project layout
+
+| Path | Role |
+| ---- | ---- |
+| `py_scheduler/cli.py` | Argparse-style argv handling, logging setup, registry import |
+| `py_scheduler/app.py` | `SchedulerApp`, Tenacity wrapper, scheduler construction |
+| `py_scheduler/loader.py` | YAML → `SchedulerConfig` / `JobConfig` validation |
+| `py_scheduler/models.py` | Dataclasses for config surfaces |
+| `py_scheduler/registry.py` | `JobRegistry` name → callable map |
+| `py_scheduler/persistence.py` | SQLite execution store |
+| `py_scheduler/webhooks.py` | HTTP notifier + muzzle state |
+| `py_scheduler/metrics.py` | Prometheus counters/histogram + HTTP server |
+| `py_scheduler/example_jobs.py` | Sample `register` implementation |
+| `main.py` | Thin `python -m` style entry re-exporting `cli.main` |
+| `config.example.yaml` | Documented sample configuration |
+| `scripts/smoke_validate.py` | Fast wiring check (no scheduler loop) |
+| `tests/` | `pytest` suite |
+| `.github/workflows/` | CI (incl. PR dependency review), CodeQL, PyPI publish |
+| `Dockerfile` | Runnable image with config + data volumes |
+
+## Tests
 
 ```bash
 pip install -e ".[dev]"
-ruff check .
-ruff format --check .
-pytest
+pytest -q
 ```
 
-## Docker
+### Coverage
+
+Coverage is collected on Python **3.12** in CI and uploaded to **Codecov**.
 
 ```bash
-docker build -t py-scheduler .
-docker run -p 9100:9100 py-scheduler
+pip install -e ".[dev]"
+pytest --cov=py_scheduler --cov-report=term-missing
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE).
+
+<div align="center">
+
+## Author
+
+**Enoque Sousa**
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/enoque-sousa-bb89aa168/)
+[![GitHub](https://img.shields.io/badge/GitHub-100000?style=flat&logo=github&logoColor=white)](https://github.com/esousa97)
+[![Portfolio](https://img.shields.io/badge/Portfolio-FF5722?style=flat&logo=target&logoColor=white)](https://enoquesousa.vercel.app)
+
+**[⬆ Back to Top](#py-scheduler)**
+
+Made with ❤️ by [Enoque Sousa](https://github.com/esousa97)
+
+**Project status:** Study project
+
+</div>
