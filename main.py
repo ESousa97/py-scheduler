@@ -1,17 +1,15 @@
 from __future__ import annotations
 
+import importlib
 import logging
+import os
 import sys
 from pathlib import Path
 
 import structlog
 
 from py_scheduler import JobRegistry, SchedulerApp
-from py_scheduler.example_jobs import (
-    exemplo_manutencao,
-    exemplo_relatorio,
-    exemplo_tick,
-)
+from py_scheduler.loader import load_scheduler_config
 
 
 def _configure_logging() -> None:
@@ -38,6 +36,24 @@ def _default_config_path() -> Path:
     return Path(__file__).resolve().parent / "config.example.yaml"
 
 
+def _jobs_register_module_from_env_and_config(config_module: str | None) -> str:
+    return (
+        config_module
+        or os.environ.get("PY_SCHEDULER_JOBS_MODULE")
+        or "py_scheduler.example_jobs"
+    )
+
+
+def _populate_registry(registry: JobRegistry, module_name: str) -> None:
+    mod = importlib.import_module(module_name)
+    register = getattr(mod, "register", None)
+    if register is None:
+        raise RuntimeError(
+            f"O módulo {module_name!r} deve definir register(registry: JobRegistry) -> None"
+        )
+    register(registry)
+
+
 def main(argv: list[str] | None = None) -> int:
     _configure_logging()
     log = structlog.get_logger("main")
@@ -49,10 +65,24 @@ def main(argv: list[str] | None = None) -> int:
         log.error("config_file_not_found", config_path=str(config_path))
         return 1
 
+    cfg = load_scheduler_config(config_path)
+    module_name = _jobs_register_module_from_env_and_config(cfg.jobs_register_module)
     registry = JobRegistry()
-    registry.register("exemplo_tick", exemplo_tick)
-    registry.register("exemplo_relatorio", exemplo_relatorio)
-    registry.register("exemplo_manutencao", exemplo_manutencao)
+    try:
+        _populate_registry(registry, module_name)
+    except (
+        ImportError,
+        ModuleNotFoundError,
+        RuntimeError,
+        AttributeError,
+        ValueError,
+    ) as exc:
+        log.error(
+            "jobs_register_failed",
+            module_name=module_name,
+            error=str(exc),
+        )
+        return 1
 
     app = SchedulerApp(registry, config_path)
 

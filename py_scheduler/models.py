@@ -84,6 +84,14 @@ class SchedulerConfig:
 
     jobs: tuple[JobConfig, ...]
     webhook: WebhookConfig = WebhookConfig()
+    # Caminho do SQLite para histórico de execuções (string vazia desativa persistência).
+    database_path: str = "scheduler.sqlite"
+    # Módulo Python com função register(registry) — ver docs/ADDING_JOBS.md.
+    jobs_register_module: str | None = None
+    # Servidor HTTP do prometheus_client (expondo /metrics).
+    metrics_enabled: bool = True
+    metrics_host: str = "0.0.0.0"
+    metrics_port: int = 9100
 
 
 def interval_from_mapping(data: dict[str, Any]) -> IntervalConfig:

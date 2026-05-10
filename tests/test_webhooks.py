@@ -55,6 +55,30 @@ class _RecorderNotifier:
 
 
 class TestLoaderWebhook(unittest.TestCase):
+    def test_storage_and_metrics_keys(self) -> None:
+        yaml = """
+database_path: /tmp/x.db
+jobs_register_module: mypkg.jobs
+metrics_enabled: false
+metrics_host: 127.0.0.1
+metrics_port: 9200
+jobs: []
+"""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(yaml)
+            path = Path(f.name)
+        try:
+            cfg = load_scheduler_config(path)
+            self.assertEqual(cfg.database_path, "/tmp/x.db")
+            self.assertEqual(cfg.jobs_register_module, "mypkg.jobs")
+            self.assertFalse(cfg.metrics_enabled)
+            self.assertEqual(cfg.metrics_host, "127.0.0.1")
+            self.assertEqual(cfg.metrics_port, 9200)
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_webhook_from_yaml(self) -> None:
         yaml = """
 webhook:

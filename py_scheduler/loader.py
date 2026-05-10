@@ -57,7 +57,20 @@ def load_scheduler_config(path: str | Path) -> SchedulerConfig:
         webhook = webhook_from_mapping(
             cast(dict[str, Any] | None, data.get("webhook"))
         )
-        return SchedulerConfig(jobs=(), webhook=webhook)
+        database_path = _parse_database_path(data.get("database_path"))
+        jobs_register_module = _parse_optional_str(data.get("jobs_register_module"))
+        metrics_enabled = _parse_metrics_enabled(data.get("metrics_enabled"))
+        metrics_host = _parse_metrics_host(data.get("metrics_host"))
+        metrics_port = _parse_metrics_port(data.get("metrics_port"))
+        return SchedulerConfig(
+            jobs=(),
+            webhook=webhook,
+            database_path=database_path,
+            jobs_register_module=jobs_register_module,
+            metrics_enabled=metrics_enabled,
+            metrics_host=metrics_host,
+            metrics_port=metrics_port,
+        )
     if not isinstance(jobs_raw, list):
         raise ValueError("'jobs' deve ser uma lista")
     jobs: list[JobConfig] = []
@@ -68,7 +81,20 @@ def load_scheduler_config(path: str | Path) -> SchedulerConfig:
     webhook = webhook_from_mapping(
         cast(dict[str, Any] | None, data.get("webhook"))
     )
-    return SchedulerConfig(jobs=tuple(jobs), webhook=webhook)
+    database_path = _parse_database_path(data.get("database_path"))
+    jobs_register_module = _parse_optional_str(data.get("jobs_register_module"))
+    metrics_enabled = _parse_metrics_enabled(data.get("metrics_enabled"))
+    metrics_host = _parse_metrics_host(data.get("metrics_host"))
+    metrics_port = _parse_metrics_port(data.get("metrics_port"))
+    return SchedulerConfig(
+        jobs=tuple(jobs),
+        webhook=webhook,
+        database_path=database_path,
+        jobs_register_module=jobs_register_module,
+        metrics_enabled=metrics_enabled,
+        metrics_host=metrics_host,
+        metrics_port=metrics_port,
+    )
 
 
 def webhook_from_mapping(data: dict[str, Any] | None) -> WebhookConfig:
@@ -86,3 +112,46 @@ def webhook_from_mapping(data: dict[str, Any] | None) -> WebhookConfig:
     if not isinstance(raw_timeout, (int, float)):
         raise ValueError("webhook.timeout_seconds deve ser numérico")
     return WebhookConfig(url=url, timeout_seconds=float(raw_timeout))
+
+
+def _parse_database_path(raw: Any) -> str:
+    if raw is None:
+        return "scheduler.sqlite"
+    if not isinstance(raw, str):
+        raise ValueError("database_path deve ser uma string ou omitido")
+    return raw.strip()
+
+
+def _parse_optional_str(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ValueError("jobs_register_module deve ser uma string ou omitido")
+    s = raw.strip()
+    return s or None
+
+
+def _parse_metrics_enabled(raw: Any) -> bool:
+    if raw is None:
+        return True
+    if not isinstance(raw, bool):
+        raise ValueError("metrics_enabled deve ser booleano (true/false)")
+    return raw
+
+
+def _parse_metrics_host(raw: Any) -> str:
+    if raw is None:
+        return "0.0.0.0"
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError("metrics_host deve ser uma string não vazia")
+    return raw.strip()
+
+
+def _parse_metrics_port(raw: Any) -> int:
+    if raw is None:
+        return 9100
+    if not isinstance(raw, int):
+        raise ValueError("metrics_port deve ser um inteiro ou omitido")
+    if raw < 1 or raw > 65535:
+        raise ValueError("metrics_port deve estar entre 1 e 65535")
+    return raw

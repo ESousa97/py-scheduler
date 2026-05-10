@@ -2,6 +2,22 @@
 # Cada job referencia um nome registrado em código (JobRegistry).
 # Retry usa Exponential Backoff e, se omitido, tenta 3 vezes.
 #
+# Persistência: SQLite grava cada tentativa (sucesso, falha com retry, falha final).
+# database_path: "" desativa o armazenamento.
+#
+# Métricas Prometheus em /metrics (prometheus_client):
+#   metrics_enabled: false   # desliga o servidor HTTP
+#   metrics_host: 0.0.0.0
+#   metrics_port: 9100
+#
+# Módulo que registra callables (register(registry)); sobrescreve PY_SCHEDULER_JOBS_MODULE.
+# jobs_register_module: minha_empresa.scheduler_jobs
+
+database_path: scheduler.sqlite
+metrics_enabled: true
+metrics_host: 0.0.0.0
+metrics_port: 9100
+#
 # Webhook opcional: após esgotar retentativas, envia POST JSON com
 # job_name, error, timestamp. Com notify_on_success: true, envia também
 # após cada execução bem-sucedida (útil para tarefas críticas).

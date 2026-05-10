@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -11,7 +12,13 @@ import structlog
 from tenacity import RetryCallState, retry, stop_after_attempt, wait_exponential
 
 from py_scheduler.loader import load_scheduler_config
+from py_scheduler.metrics import (
+    inc_terminal_failure,
+    observe_attempt_duration_ms,
+    start_metrics_server,
+)
 from py_scheduler.models import JobConfig, SchedulerConfig
+from py_scheduler.persistence import ExecutionOutcome, JobExecutionStore
 from py_scheduler.registry import JobRegistry
 from py_scheduler.webhooks import WebhookNotifier
 
@@ -27,6 +34,7 @@ def _with_retry(
     func: Callable[..., object],
     *,
     webhook_notifier: WebhookNotifier,
+    execution_store: JobExecutionStore | None = None,
 ) -> Callable[..., object]:
     retry_config = job.retry
     job_logger = structured_logger.bind(job_id=job.id, job_name=job.name)
@@ -44,17 +52,39 @@ def _with_retry(
         started_at = attempt_started_at.pop(attempt_number, retry_state.start_time)
         exception = retry_state.outcome.exception()
         status = "failed" if attempt_number >= retry_config.attempts else "retry"
+        duration_ms = _duration_ms(started_at)
+        err_type = type(exception).__name__ if exception is not None else None
+        err_text = str(exception) if exception is not None else None
+        finished_at = datetime.now(UTC).isoformat()
+        outcome: ExecutionOutcome = (
+            "failed_final" if status == "failed" else "failed_retry"
+        )
+        if execution_store is not None:
+            execution_store.record_execution(
+                job_id=job.id,
+                job_name=job.name,
+                finished_at_iso=finished_at,
+                duration_ms=duration_ms,
+                outcome=outcome,
+                attempt_number=attempt_number,
+                error_type=err_type,
+                error_message=err_text,
+            )
+        observe_attempt_duration_ms(
+            job_id=job.id, job_name=job.name, duration_ms=duration_ms
+        )
+        if outcome == "failed_final":
+            inc_terminal_failure(job_id=job.id, job_name=job.name)
         log_method = job_logger.error if status == "failed" else job_logger.warning
         log_method(
             "job_execution",
             status=status,
-            duration_ms=_duration_ms(started_at),
+            duration_ms=duration_ms,
             attempt_number=attempt_number,
-            error_type=type(exception).__name__ if exception is not None else None,
-            error_message=str(exception) if exception is not None else None,
+            error_type=err_type,
+            error_message=err_text,
         )
         if status == "failed":
-            err_text = str(exception) if exception is not None else None
             webhook_notifier.notify_job_failed(job.name, err_text)
 
     def _run_job() -> object:
@@ -62,10 +92,26 @@ def _with_retry(
         attempt_number = current_attempt_number["value"]
         result = func()
         attempt_started_at.pop(attempt_number, None)
+        duration_ms = _duration_ms(started_at)
+        finished_at = datetime.now(UTC).isoformat()
+        if execution_store is not None:
+            execution_store.record_execution(
+                job_id=job.id,
+                job_name=job.name,
+                finished_at_iso=finished_at,
+                duration_ms=duration_ms,
+                outcome="success",
+                attempt_number=attempt_number,
+                error_type=None,
+                error_message=None,
+            )
+        observe_attempt_duration_ms(
+            job_id=job.id, job_name=job.name, duration_ms=duration_ms
+        )
         job_logger.info(
             "job_execution",
             status="success",
-            duration_ms=_duration_ms(started_at),
+            duration_ms=duration_ms,
             attempt_number=attempt_number,
         )
         if job.notify_on_success:
@@ -97,7 +143,12 @@ class SchedulerApp:
     def load_config(self) -> SchedulerConfig:
         return load_scheduler_config(self._config_path)
 
-    def build_scheduler(self, config: SchedulerConfig | None = None) -> BlockingScheduler:
+    def build_scheduler(
+        self,
+        config: SchedulerConfig | None = None,
+        *,
+        execution_store: JobExecutionStore | None = None,
+    ) -> BlockingScheduler:
         cfg = config if config is not None else self.load_config()
         executors = {"default": ThreadPoolExecutor(max_workers=4)}
         job_defaults: dict[str, object] = {"coalesce": True, "max_instances": 1}
@@ -108,7 +159,12 @@ class SchedulerApp:
         notifier = WebhookNotifier.from_config(cfg.webhook)
         for job in cfg.jobs:
             func = self._registry.get(job.name)
-            retrying_func = _with_retry(job, func, webhook_notifier=notifier)
+            retrying_func = _with_retry(
+                job,
+                func,
+                webhook_notifier=notifier,
+                execution_store=execution_store,
+            )
             kwargs = job.interval.to_apscheduler_kwargs()
             scheduler.add_job(
                 retrying_func,
@@ -123,7 +179,14 @@ class SchedulerApp:
         """Inicia o scheduler até interrupção; encerra com shutdown(wait=True)."""
         scheduler: BlockingScheduler | None = None
         try:
-            scheduler = self.build_scheduler()
+            cfg = self.load_config()
+            start_metrics_server(cfg)
+            execution_store: JobExecutionStore | None = None
+            if cfg.database_path:
+                execution_store = JobExecutionStore(cfg.database_path)
+            scheduler = self.build_scheduler(
+                cfg, execution_store=execution_store
+            )
             n = len(scheduler.get_jobs())
             structured_logger.info("scheduler_started", job_count=n)
             scheduler.start()
