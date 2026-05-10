@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -56,6 +57,64 @@ class JobExecutionStore:
                     CREATE INDEX IF NOT EXISTS idx_job_executions_job_id
                     ON job_executions (job_id);
                     """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS failure_webhook_muzzle (
+                        job_id TEXT PRIMARY KEY NOT NULL,
+                        last_alert_at_iso TEXT NOT NULL
+                    );
+                    """
+                )
+            finally:
+                conn.close()
+
+    def get_last_failure_webhook_alert_at(self, job_id: str) -> datetime | None:
+        """Instante UTC do último webhook `job_failed` enviado (muzzle); None se nunca alertou."""
+        with self._lock:
+            conn = self._connect()
+            try:
+                cur = conn.execute(
+                    """
+                    SELECT last_alert_at_iso FROM failure_webhook_muzzle
+                    WHERE job_id = ?;
+                    """,
+                    (job_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                return datetime.fromisoformat(row[0])
+            finally:
+                conn.close()
+
+    def set_last_failure_webhook_alert_at(self, job_id: str, at: datetime) -> None:
+        """Grava o instante do último alerta de falha (substitui por job_id)."""
+        if at.tzinfo is None:
+            raise ValueError("last_alert_at deve ser timezone-aware (use UTC)")
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO failure_webhook_muzzle (job_id, last_alert_at_iso)
+                    VALUES (?, ?)
+                    ON CONFLICT(job_id) DO UPDATE SET
+                        last_alert_at_iso = excluded.last_alert_at_iso;
+                    """,
+                    (job_id, at.astimezone(UTC).isoformat()),
+                )
+            finally:
+                conn.close()
+
+    def clear_failure_webhook_muzzle(self, job_id: str) -> None:
+        """Remove estado de muzzle (ex.: após sucesso da tarefa)."""
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "DELETE FROM failure_webhook_muzzle WHERE job_id = ?;",
+                    (job_id,),
                 )
             finally:
                 conn.close()

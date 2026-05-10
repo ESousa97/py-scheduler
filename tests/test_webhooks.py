@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 
 from py_scheduler.app import _with_retry
 from py_scheduler.loader import load_scheduler_config, webhook_from_mapping
+from py_scheduler.persistence import JobExecutionStore
 from py_scheduler.models import (
     IntervalConfig,
     JobConfig,
@@ -40,15 +41,18 @@ class _RecorderNotifier:
     """Substituto mínimo de WebhookNotifier para testes de _with_retry."""
 
     def __init__(self) -> None:
-        self.failed: list[tuple[str, str | None]] = []
+        self.failed: list[tuple[str, str, str | None]] = []
         self.succeeded: list[str] = []
 
     @property
     def enabled(self) -> bool:
         return True
 
-    def notify_job_failed(self, job_name: str, error: str | None) -> None:
-        self.failed.append((job_name, error))
+    def clear_failure_alert_silence(self, job_id: str) -> None:
+        pass
+
+    def notify_job_failed(self, job_id: str, job_name: str, error: str | None) -> None:
+        self.failed.append((job_id, job_name, error))
 
     def notify_job_succeeded(self, job_name: str) -> None:
         self.succeeded.append(job_name)
@@ -124,6 +128,24 @@ jobs:
         w = webhook_from_mapping({"url": "   "})
         self.assertIsNone(w.url)
 
+    def test_webhook_failure_alert_silence_minutes(self) -> None:
+        yaml = """
+webhook:
+  url: "https://example.com/hook"
+  failure_alert_silence_minutes: 45
+jobs: []
+"""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(yaml)
+            path = Path(f.name)
+        try:
+            cfg = load_scheduler_config(path)
+            self.assertEqual(cfg.webhook.failure_alert_silence_minutes, 45.0)
+        finally:
+            path.unlink(missing_ok=True)
+
 
 class TestWebhookNotifierHTTP(unittest.TestCase):
     @classmethod
@@ -148,12 +170,13 @@ class TestWebhookNotifierHTTP(unittest.TestCase):
         cfg = WebhookConfig(url=base, timeout_seconds=5)
         n = WebhookNotifier.from_config(cfg)
 
-        n.notify_job_failed("tarefa_x", "algo correu mal")
+        n.notify_job_failed("jid-1", "tarefa_x", "algo correu mal")
         n.notify_job_succeeded("tarefa_x")
 
         self.assertEqual(len(_WebhookCaptureHandler.received), 2)
         fail = _WebhookCaptureHandler.received[0]
         self.assertEqual(fail["event"], "job_failed")
+        self.assertEqual(fail["job_id"], "jid-1")
         self.assertEqual(fail["job_name"], "tarefa_x")
         self.assertEqual(fail["error"], "algo correu mal")
         self.assertIn("timestamp", fail)
@@ -165,6 +188,97 @@ class TestWebhookNotifierHTTP(unittest.TestCase):
         self.assertEqual(ok["job_name"], "tarefa_x")
         self.assertNotIn("error", ok)
         self.assertIn("timestamp", ok)
+
+    def test_failure_muzzle_suppresses_repeated_alerts(self) -> None:
+        base = f"http://127.0.0.1:{self._port}/wh"
+        cfg = WebhookConfig(
+            url=base,
+            timeout_seconds=5,
+            failure_alert_silence_minutes=60.0,
+        )
+        n = WebhookNotifier.from_config(cfg)
+        n.notify_job_failed("j1", "tarefa_x", "primeiro")
+        n.notify_job_failed("j1", "tarefa_x", "segundo")
+        self.assertEqual(len(_WebhookCaptureHandler.received), 1)
+        self.assertEqual(_WebhookCaptureHandler.received[0]["error"], "primeiro")
+        n.clear_failure_alert_silence("j1")
+        n.notify_job_failed("j1", "tarefa_x", "apos_clear")
+        self.assertEqual(len(_WebhookCaptureHandler.received), 2)
+        self.assertEqual(_WebhookCaptureHandler.received[1]["error"], "apos_clear")
+
+    def test_failure_muzzle_per_job_id(self) -> None:
+        base = f"http://127.0.0.1:{self._port}/wh"
+        cfg = WebhookConfig(
+            url=base,
+            timeout_seconds=5,
+            failure_alert_silence_minutes=60.0,
+        )
+        n = WebhookNotifier.from_config(cfg)
+        n.notify_job_failed("j1", "job_a", "x")
+        n.notify_job_failed("j2", "job_b", "y")
+        self.assertEqual(len(_WebhookCaptureHandler.received), 2)
+
+    def test_success_clears_muzzle_for_next_failure_webhook(self) -> None:
+        base = f"http://127.0.0.1:{self._port}/wh"
+        cfg = WebhookConfig(
+            url=base,
+            timeout_seconds=5,
+            failure_alert_silence_minutes=60.0,
+        )
+        n = WebhookNotifier.from_config(cfg)
+        job = JobConfig(
+            id="id-rec",
+            name="flip",
+            interval=IntervalConfig(seconds=1),
+            retry=RetryConfig(
+                attempts=1,
+                wait_multiplier_seconds=0.01,
+                wait_min_seconds=0.0,
+                wait_max_seconds=0.01,
+            ),
+            notify_on_success=False,
+        )
+        state = {"n": 0}
+
+        def flip() -> int:
+            state["n"] += 1
+            k = state["n"]
+            if k in (1, 2, 4):
+                raise RuntimeError(str(k))
+            return 0
+
+        wrapped = _with_retry(job, flip, webhook_notifier=n)
+        with self.assertRaises(RuntimeError):
+            wrapped()
+        self.assertEqual(len(_WebhookCaptureHandler.received), 1)
+        with self.assertRaises(RuntimeError):
+            wrapped()
+        self.assertEqual(len(_WebhookCaptureHandler.received), 1)
+        wrapped()
+        self.assertEqual(len(_WebhookCaptureHandler.received), 1)
+        with self.assertRaises(RuntimeError):
+            wrapped()
+        self.assertEqual(len(_WebhookCaptureHandler.received), 2)
+
+    def test_muzzle_persisted_in_sqlite_across_notifier_instances(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = str(Path(tmp) / "sched.sqlite")
+            store = JobExecutionStore(db_path)
+            base = f"http://127.0.0.1:{self._port}/wh"
+            cfg = WebhookConfig(
+                url=base,
+                timeout_seconds=5,
+                failure_alert_silence_minutes=60.0,
+            )
+            n1 = WebhookNotifier.from_config(cfg, execution_store=store)
+            n1.notify_job_failed("j1", "job", "primeiro")
+            self.assertEqual(len(_WebhookCaptureHandler.received), 1)
+            n2 = WebhookNotifier.from_config(cfg, execution_store=store)
+            n2.notify_job_failed("j1", "job", "segundo")
+            self.assertEqual(len(_WebhookCaptureHandler.received), 1)
+            n2.clear_failure_alert_silence("j1")
+            n2.notify_job_failed("j1", "job", "terceiro")
+            self.assertEqual(len(_WebhookCaptureHandler.received), 2)
 
 
 class TestWithRetryWebhook(unittest.TestCase):
@@ -189,8 +303,8 @@ class TestWithRetryWebhook(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             wrapped()
         self.assertEqual(len(rec.failed), 1)
-        self.assertEqual(rec.failed[0][0], "always_fail")
-        self.assertIn("falhou", rec.failed[0][1] or "")
+        self.assertEqual(rec.failed[0][1], "always_fail")
+        self.assertIn("falhou", rec.failed[0][2] or "")
         self.assertEqual(rec.succeeded, [])
 
     def test_success_with_notify_on_success(self) -> None:

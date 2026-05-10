@@ -4,6 +4,8 @@
 #
 # Persistência: SQLite grava cada tentativa (sucesso, falha com retry, falha final).
 # database_path: "" desativa o armazenamento.
+# Com database_path ativo e webhook.failure_alert_silence_minutes > 0, o estado do
+# muzzle (último alerta de falha por job) também fica neste ficheiro — sobrevive a restarts.
 #
 # Métricas Prometheus em /metrics (prometheus_client):
 #   metrics_enabled: false   # desliga o servidor HTTP
@@ -25,6 +27,9 @@ metrics_port: 9100
 # webhook:
 #   url: https://hooks.slack.com/services/...   # ou URL de webhook Discord
 #   timeout_seconds: 10
+#   # Muzzle: depois de um alerta de falha, não reenvia para o mesmo job por N minutos
+#   # (reduz spam no Slack se a tarefa falha em ciclo). 0 = desligado.
+#   failure_alert_silence_minutes: 30
 
 jobs:
   - id: exemplo_segundos

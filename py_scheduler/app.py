@@ -85,12 +85,13 @@ def _with_retry(
             error_message=err_text,
         )
         if status == "failed":
-            webhook_notifier.notify_job_failed(job.name, err_text)
+            webhook_notifier.notify_job_failed(job.id, job.name, err_text)
 
     def _run_job() -> object:
         started_at = time.perf_counter()
         attempt_number = current_attempt_number["value"]
         result = func()
+        webhook_notifier.clear_failure_alert_silence(job.id)
         attempt_started_at.pop(attempt_number, None)
         duration_ms = _duration_ms(started_at)
         finished_at = datetime.now(UTC).isoformat()
@@ -156,7 +157,9 @@ class SchedulerApp:
             executors=executors,
             job_defaults=job_defaults,
         )
-        notifier = WebhookNotifier.from_config(cfg.webhook)
+        notifier = WebhookNotifier.from_config(
+            cfg.webhook, execution_store=execution_store
+        )
         for job in cfg.jobs:
             func = self._registry.get(job.name)
             retrying_func = _with_retry(

@@ -72,10 +72,17 @@ class WebhookConfig:
 
     url: str | None = None
     timeout_seconds: float = 10.0
+    # Muzzle: após enviar um alerta de falha para um job, não reenvia por N minutos
+    # (evita spam no canal se a tarefa continua a falhar em ciclo). 0 = desligado.
+    failure_alert_silence_minutes: float = 0.0
 
     def __post_init__(self) -> None:
         if self.timeout_seconds <= 0:
             raise ValueError("WebhookConfig.timeout_seconds deve ser maior que zero")
+        if self.failure_alert_silence_minutes < 0:
+            raise ValueError(
+                "WebhookConfig.failure_alert_silence_minutes deve ser maior ou igual a zero"
+            )
 
 
 @dataclass(frozen=True, slots=True)

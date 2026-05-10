@@ -111,7 +111,20 @@ def webhook_from_mapping(data: dict[str, Any] | None) -> WebhookConfig:
     raw_timeout = data.get("timeout_seconds", 10.0)
     if not isinstance(raw_timeout, (int, float)):
         raise ValueError("webhook.timeout_seconds deve ser numérico")
-    return WebhookConfig(url=url, timeout_seconds=float(raw_timeout))
+    raw_silence = data.get("failure_alert_silence_minutes", 0.0)
+    if raw_silence is None:
+        silence_minutes = 0.0
+    elif not isinstance(raw_silence, (int, float)):
+        raise ValueError(
+            "webhook.failure_alert_silence_minutes deve ser numérico ou omitido"
+        )
+    else:
+        silence_minutes = float(raw_silence)
+    return WebhookConfig(
+        url=url,
+        timeout_seconds=float(raw_timeout),
+        failure_alert_silence_minutes=silence_minutes,
+    )
 
 
 def _parse_database_path(raw: Any) -> str:

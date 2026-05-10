@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from py_scheduler.persistence import JobExecutionStore
@@ -41,3 +42,22 @@ class TestJobExecutionStore(unittest.TestCase):
                 self.assertEqual(cur.fetchone()[0], 2)
             finally:
                 conn.close()
+
+    def test_failure_webhook_muzzle_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "db.sqlite"
+            store = JobExecutionStore(str(path))
+            t0 = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
+            self.assertIsNone(store.get_last_failure_webhook_alert_at("j1"))
+            store.set_last_failure_webhook_alert_at("j1", t0)
+            got = store.get_last_failure_webhook_alert_at("j1")
+            assert got is not None
+            self.assertEqual(got, t0)
+            store.set_last_failure_webhook_alert_at(
+                "j1", t0 + timedelta(minutes=5)
+            )
+            got2 = store.get_last_failure_webhook_alert_at("j1")
+            assert got2 is not None
+            self.assertEqual(got2, t0 + timedelta(minutes=5))
+            store.clear_failure_webhook_muzzle("j1")
+            self.assertIsNone(store.get_last_failure_webhook_alert_at("j1"))
