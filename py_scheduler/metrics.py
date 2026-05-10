@@ -37,9 +37,7 @@ JOB_EXECUTION_SECONDS = Histogram(
 )
 
 
-def observe_attempt_duration_ms(
-    *, job_id: str, job_name: str, duration_ms: int
-) -> None:
+def observe_attempt_duration_ms(*, job_id: str, job_name: str, duration_ms: int) -> None:
     seconds = max(duration_ms, 0) / 1000.0
     JOB_EXECUTION_SECONDS.labels(job_id, job_name).observe(seconds)
 

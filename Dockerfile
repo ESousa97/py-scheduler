@@ -5,11 +5,10 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
+COPY pyproject.toml README.md ./
 COPY py_scheduler ./py_scheduler
 COPY main.py .
+RUN pip install --no-cache-dir .
 COPY config.example.yaml /app/config/config.yaml
 
 # Sobrescreva com volume em `/app/config/config.yaml` e use `/data` para o SQLite.

@@ -79,9 +79,7 @@ class WebhookNotifier:
                         )
                         return
                 if self._execution_store is not None:
-                    self._execution_store.set_last_failure_webhook_alert_at(
-                        job_id, now
-                    )
+                    self._execution_store.set_last_failure_webhook_alert_at(job_id, now)
                 else:
                     self._last_failure_alert_at[job_id] = now
         payload: dict[str, Any] = {
@@ -114,9 +112,7 @@ class WebhookNotifier:
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
         try:
-            with urllib.request.urlopen(
-                req, timeout=self._config.timeout_seconds
-            ) as resp:
+            with urllib.request.urlopen(req, timeout=self._config.timeout_seconds) as resp:
                 code = getattr(resp, "status", resp.getcode())
                 structured_logger.debug(
                     "webhook_sent",

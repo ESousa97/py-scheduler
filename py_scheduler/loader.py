@@ -31,9 +31,7 @@ def _parse_job(entry: dict[str, Any], index: int) -> JobConfig:
     retry = retry_from_mapping(cast(dict[str, Any] | None, retry_raw))
     notify_raw = entry.get("notify_on_success", False)
     if not isinstance(notify_raw, bool):
-        raise ValueError(
-            f"jobs[{index}].notify_on_success deve ser booleano (true/false)"
-        )
+        raise ValueError(f"jobs[{index}].notify_on_success deve ser booleano (true/false)")
     # valida cedo para mensagens claras
     interval.to_apscheduler_kwargs()
     return JobConfig(
@@ -54,9 +52,7 @@ def load_scheduler_config(path: str | Path) -> SchedulerConfig:
         raise ValueError("Raiz do YAML deve ser um mapeamento (objeto)")
     jobs_raw = data.get("jobs")
     if jobs_raw is None:
-        webhook = webhook_from_mapping(
-            cast(dict[str, Any] | None, data.get("webhook"))
-        )
+        webhook = webhook_from_mapping(cast(dict[str, Any] | None, data.get("webhook")))
         database_path = _parse_database_path(data.get("database_path"))
         jobs_register_module = _parse_optional_str(data.get("jobs_register_module"))
         metrics_enabled = _parse_metrics_enabled(data.get("metrics_enabled"))
@@ -78,9 +74,7 @@ def load_scheduler_config(path: str | Path) -> SchedulerConfig:
         if not isinstance(item, dict):
             raise ValueError(f"jobs[{i}] deve ser um mapeamento")
         jobs.append(_parse_job(cast(dict[str, Any], item), i))
-    webhook = webhook_from_mapping(
-        cast(dict[str, Any] | None, data.get("webhook"))
-    )
+    webhook = webhook_from_mapping(cast(dict[str, Any] | None, data.get("webhook")))
     database_path = _parse_database_path(data.get("database_path"))
     jobs_register_module = _parse_optional_str(data.get("jobs_register_module"))
     metrics_enabled = _parse_metrics_enabled(data.get("metrics_enabled"))
@@ -115,9 +109,7 @@ def webhook_from_mapping(data: dict[str, Any] | None) -> WebhookConfig:
     if raw_silence is None:
         silence_minutes = 0.0
     elif not isinstance(raw_silence, (int, float)):
-        raise ValueError(
-            "webhook.failure_alert_silence_minutes deve ser numérico ou omitido"
-        )
+        raise ValueError("webhook.failure_alert_silence_minutes deve ser numérico ou omitido")
     else:
         silence_minutes = float(raw_silence)
     return WebhookConfig(

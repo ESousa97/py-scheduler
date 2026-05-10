@@ -36,9 +36,7 @@ class TestJobExecutionStore(unittest.TestCase):
             )
             conn = sqlite3.connect(str(path))
             try:
-                cur = conn.execute(
-                    "SELECT COUNT(*) FROM job_executions WHERE job_id = ?;", ("j1",)
-                )
+                cur = conn.execute("SELECT COUNT(*) FROM job_executions WHERE job_id = ?;", ("j1",))
                 self.assertEqual(cur.fetchone()[0], 2)
             finally:
                 conn.close()
@@ -53,9 +51,7 @@ class TestJobExecutionStore(unittest.TestCase):
             got = store.get_last_failure_webhook_alert_at("j1")
             assert got is not None
             self.assertEqual(got, t0)
-            store.set_last_failure_webhook_alert_at(
-                "j1", t0 + timedelta(minutes=5)
-            )
+            store.set_last_failure_webhook_alert_at("j1", t0 + timedelta(minutes=5))
             got2 = store.get_last_failure_webhook_alert_at("j1")
             assert got2 is not None
             self.assertEqual(got2, t0 + timedelta(minutes=5))

@@ -1,3 +1,9 @@
+# Fonte de verdade: pyproject.toml ([project.dependencies]).
+# Produção: pip install .
+# Desenvolvimento: pip install -e ".[dev]"
+#
+# Bloco abaixo espelha os mínimos declarados no pyproject (útil para ambientes
+# que ainda usam apenas requirements.txt, por exemplo caches antigos).
 APScheduler>=3.10.4
 PyYAML>=6.0.1
 structlog>=24.1.0

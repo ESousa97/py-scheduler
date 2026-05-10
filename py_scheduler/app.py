@@ -5,10 +5,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+import structlog
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers import SchedulerNotRunningError
 from apscheduler.schedulers.blocking import BlockingScheduler
-import structlog
 from tenacity import RetryCallState, retry, stop_after_attempt, wait_exponential
 
 from py_scheduler.loader import load_scheduler_config
@@ -56,9 +56,7 @@ def _with_retry(
         err_type = type(exception).__name__ if exception is not None else None
         err_text = str(exception) if exception is not None else None
         finished_at = datetime.now(UTC).isoformat()
-        outcome: ExecutionOutcome = (
-            "failed_final" if status == "failed" else "failed_retry"
-        )
+        outcome: ExecutionOutcome = "failed_final" if status == "failed" else "failed_retry"
         if execution_store is not None:
             execution_store.record_execution(
                 job_id=job.id,
@@ -70,9 +68,7 @@ def _with_retry(
                 error_type=err_type,
                 error_message=err_text,
             )
-        observe_attempt_duration_ms(
-            job_id=job.id, job_name=job.name, duration_ms=duration_ms
-        )
+        observe_attempt_duration_ms(job_id=job.id, job_name=job.name, duration_ms=duration_ms)
         if outcome == "failed_final":
             inc_terminal_failure(job_id=job.id, job_name=job.name)
         log_method = job_logger.error if status == "failed" else job_logger.warning
@@ -106,9 +102,7 @@ def _with_retry(
                 error_type=None,
                 error_message=None,
             )
-        observe_attempt_duration_ms(
-            job_id=job.id, job_name=job.name, duration_ms=duration_ms
-        )
+        observe_attempt_duration_ms(job_id=job.id, job_name=job.name, duration_ms=duration_ms)
         job_logger.info(
             "job_execution",
             status="success",
@@ -157,9 +151,7 @@ class SchedulerApp:
             executors=executors,
             job_defaults=job_defaults,
         )
-        notifier = WebhookNotifier.from_config(
-            cfg.webhook, execution_store=execution_store
-        )
+        notifier = WebhookNotifier.from_config(cfg.webhook, execution_store=execution_store)
         for job in cfg.jobs:
             func = self._registry.get(job.name)
             retrying_func = _with_retry(
@@ -187,9 +179,7 @@ class SchedulerApp:
             execution_store: JobExecutionStore | None = None
             if cfg.database_path:
                 execution_store = JobExecutionStore(cfg.database_path)
-            scheduler = self.build_scheduler(
-                cfg, execution_store=execution_store
-            )
+            scheduler = self.build_scheduler(cfg, execution_store=execution_store)
             n = len(scheduler.get_jobs())
             structured_logger.info("scheduler_started", job_count=n)
             scheduler.start()

@@ -10,13 +10,13 @@ from typing import Any, ClassVar
 
 from py_scheduler.app import _with_retry
 from py_scheduler.loader import load_scheduler_config, webhook_from_mapping
-from py_scheduler.persistence import JobExecutionStore
 from py_scheduler.models import (
     IntervalConfig,
     JobConfig,
     RetryConfig,
     WebhookConfig,
 )
+from py_scheduler.persistence import JobExecutionStore
 from py_scheduler.webhooks import WebhookNotifier
 
 

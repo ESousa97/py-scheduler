@@ -41,17 +41,11 @@ class RetryConfig:
         if self.attempts < 1:
             raise ValueError("RetryConfig.attempts deve ser maior ou igual a 1")
         if self.wait_multiplier_seconds <= 0:
-            raise ValueError(
-                "RetryConfig.wait_multiplier_seconds deve ser maior que zero"
-            )
+            raise ValueError("RetryConfig.wait_multiplier_seconds deve ser maior que zero")
         if self.wait_min_seconds < 0:
-            raise ValueError(
-                "RetryConfig.wait_min_seconds deve ser maior ou igual a zero"
-            )
+            raise ValueError("RetryConfig.wait_min_seconds deve ser maior ou igual a zero")
         if self.wait_max_seconds < self.wait_min_seconds:
-            raise ValueError(
-                "RetryConfig.wait_max_seconds deve ser maior ou igual ao minimo"
-            )
+            raise ValueError("RetryConfig.wait_max_seconds deve ser maior ou igual ao minimo")
 
 
 @dataclass(frozen=True, slots=True)

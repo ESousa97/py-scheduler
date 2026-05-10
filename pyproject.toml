@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "py-scheduler"
+version = "0.1.0"
+description = "Agendador de tarefas com APScheduler, configuração YAML e métricas Prometheus."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "esousa97" }]
+dependencies = [
+    "APScheduler>=3.10.4",
+    "PyYAML>=6.0.1",
+    "structlog>=24.1.0",
+    "tenacity>=8.2.3",
+    "prometheus-client>=0.20.0",
+]
+keywords = ["scheduler", "apscheduler", "yaml", "cron"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/esousa97/py-scheduler"
+Repository = "https://github.com/esousa97/py-scheduler"
+Issues = "https://github.com/esousa97/py-scheduler/issues"
+
+[project.scripts]
+py-scheduler = "py_scheduler.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["py_scheduler"]
+force-include = { "config.example.yaml" = "py_scheduler/config.example.yaml" }
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["py_scheduler", "tests", "main.py"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # bugbear
+]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
