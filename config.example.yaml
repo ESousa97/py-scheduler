@@ -1,6 +1,14 @@
 # Exemplo de configuração de jobs para o py-scheduler.
 # Cada job referencia um nome registrado em código (JobRegistry).
 # Retry usa Exponential Backoff e, se omitido, tenta 3 vezes.
+#
+# Webhook opcional: após esgotar retentativas, envia POST JSON com
+# job_name, error, timestamp. Com notify_on_success: true, envia também
+# após cada execução bem-sucedida (útil para tarefas críticas).
+#
+# webhook:
+#   url: https://hooks.slack.com/services/...   # ou URL de webhook Discord
+#   timeout_seconds: 10
 
 jobs:
   - id: exemplo_segundos

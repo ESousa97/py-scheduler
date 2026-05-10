@@ -62,6 +62,20 @@ class JobConfig:
     name: str
     interval: IntervalConfig
     retry: RetryConfig = RetryConfig()
+    # Se True e webhook configurado, envia POST após sucesso (tarefas críticas).
+    notify_on_success: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class WebhookConfig:
+    """URL opcional para alertas (Slack, Discord, etc.) via POST JSON."""
+
+    url: str | None = None
+    timeout_seconds: float = 10.0
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds <= 0:
+            raise ValueError("WebhookConfig.timeout_seconds deve ser maior que zero")
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +83,7 @@ class SchedulerConfig:
     """Configuração raiz do agendador."""
 
     jobs: tuple[JobConfig, ...]
+    webhook: WebhookConfig = WebhookConfig()
 
 
 def interval_from_mapping(data: dict[str, Any]) -> IntervalConfig:

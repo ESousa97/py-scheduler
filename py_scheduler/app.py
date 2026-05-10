@@ -13,6 +13,7 @@ from tenacity import RetryCallState, retry, stop_after_attempt, wait_exponential
 from py_scheduler.loader import load_scheduler_config
 from py_scheduler.models import JobConfig, SchedulerConfig
 from py_scheduler.registry import JobRegistry
+from py_scheduler.webhooks import WebhookNotifier
 
 structured_logger = structlog.get_logger(__name__)
 
@@ -21,7 +22,12 @@ def _duration_ms(started_at: float) -> int:
     return round((time.perf_counter() - started_at) * 1000)
 
 
-def _with_retry(job: JobConfig, func: Callable[..., object]) -> Callable[..., object]:
+def _with_retry(
+    job: JobConfig,
+    func: Callable[..., object],
+    *,
+    webhook_notifier: WebhookNotifier,
+) -> Callable[..., object]:
     retry_config = job.retry
     job_logger = structured_logger.bind(job_id=job.id, job_name=job.name)
     attempt_started_at: dict[int, float] = {}
@@ -47,6 +53,9 @@ def _with_retry(job: JobConfig, func: Callable[..., object]) -> Callable[..., ob
             error_type=type(exception).__name__ if exception is not None else None,
             error_message=str(exception) if exception is not None else None,
         )
+        if status == "failed":
+            err_text = str(exception) if exception is not None else None
+            webhook_notifier.notify_job_failed(job.name, err_text)
 
     def _run_job() -> object:
         started_at = time.perf_counter()
@@ -59,6 +68,8 @@ def _with_retry(job: JobConfig, func: Callable[..., object]) -> Callable[..., ob
             duration_ms=_duration_ms(started_at),
             attempt_number=attempt_number,
         )
+        if job.notify_on_success:
+            webhook_notifier.notify_job_succeeded(job.name)
         return result
 
     return retry(
@@ -94,9 +105,10 @@ class SchedulerApp:
             executors=executors,
             job_defaults=job_defaults,
         )
+        notifier = WebhookNotifier.from_config(cfg.webhook)
         for job in cfg.jobs:
             func = self._registry.get(job.name)
-            retrying_func = _with_retry(job, func)
+            retrying_func = _with_retry(job, func, webhook_notifier=notifier)
             kwargs = job.interval.to_apscheduler_kwargs()
             scheduler.add_job(
                 retrying_func,
