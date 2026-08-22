@@ -11,7 +11,7 @@ Thank you for your interest in improving **py-scheduler**.
 ## Local setup
 
 ```bash
-git clone https://github.com/esousa97/py-scheduler.git
+git clone https://github.com/enoquesousa/py-scheduler.git
 cd py-scheduler
 python -m venv .venv
 source .venv/bin/activate  # Windows: .\.venv\Scripts\Activate.ps1

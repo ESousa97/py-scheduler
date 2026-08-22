@@ -20,5 +20,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: YAML-driven APScheduler jobs, SQLite execution history, webhooks, Prometheus metrics, Tenacity retries.
 
-[Unreleased]: https://github.com/esousa97/py-scheduler/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/esousa97/py-scheduler/releases/tag/v0.1.0
+[Unreleased]: https://github.com/enoquesousa/py-scheduler/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/enoquesousa/py-scheduler/releases/tag/v0.1.0
