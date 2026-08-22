@@ -9,8 +9,9 @@ The extension point is a **Python module** that exposes **`register(registry)`**
    ```python
    from py_scheduler.registry import JobRegistry
 
-   def daily_backup() -> None:
-       ...
+
+   def daily_backup() -> None: ...
+
 
    def register(registry: JobRegistry) -> None:
        registry.register("daily_backup", daily_backup)
