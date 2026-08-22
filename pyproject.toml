@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Agendador de tarefas com APScheduler, configuração YAML e métricas Prometheus."
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "esousa97" }]
+authors = [{ name = "enoquesousa" }]
 dependencies = [
     "APScheduler>=3.10.4",
     "PyYAML>=6.0.1",
